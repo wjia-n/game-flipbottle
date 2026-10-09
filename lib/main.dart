@@ -1,25 +1,82 @@
 import 'package:flutter/material.dart';
-import 'package:wajiha_game_core/wajiha_game_core.dart';
-import 'game_screen.dart';
+import 'package:flutter/services.dart';
+import 'screens/splash_screen.dart';
+import 'services/audio_service.dart';
+import 'services/iap_service.dart';
+import 'services/settings_service.dart';
 
-void main() => runApp(const FlipBottleApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  final settings = FlipSettings();
+  await settings.load();
+  final audio = FlipAudio();
+  audio.configure(
+    musicOn: settings.musicOn,
+    sfxOn: settings.sfxOn,
+    volume: settings.volume,
+  );
+  final store = FlipStore();
+  runApp(FlipBottleApp(settings: settings, audio: audio, store: store));
+}
 
-class FlipBottleApp extends StatelessWidget {
-  const FlipBottleApp({super.key});
+class FlipBottleApp extends StatefulWidget {
+  final FlipSettings settings;
+  final FlipAudio audio;
+  final FlipStore store;
+  const FlipBottleApp(
+      {super.key,
+      required this.settings,
+      required this.audio,
+      required this.store});
+
+  @override
+  State<FlipBottleApp> createState() => _FlipBottleAppState();
+}
+
+class _FlipBottleAppState extends State<FlipBottleApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.audio.dispose();
+    widget.store.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause (not stop) on interruption so music resumes exactly where it
+    // left off; the game screen additionally freezes its engine.
+    if (state == AppLifecycleState.paused) {
+      widget.audio.onAppPaused();
+    } else if (state == AppLifecycleState.resumed) {
+      widget.audio.onAppResumed();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GameShell(
-      variant: ShellVariant.midnightNeon,
-      title: 'Flip Bottle',
-      tagline: 'One flick, one perfect landing. Become a bottle-flip legend!',
-      emoji: '🍾',
-      slug: 'flipbottle',
-      howToPlay:
-          '• PRESS AND HOLD anywhere to charge your flip.\n• RELEASE to send the bottle flying!\n• Land it UPRIGHT on the next platform to keep your streak.\n• Green zones on the meter = perfect spin. Nail them! 🎯\n• 3 misses and the run is over. How long can you last?',
-      playerOptions: const [1],
-      supportsBots: false,
-      gameBuilder: (ctx, players, cb) => FlipBottleScreen(players: players, callbacks: cb),
+    return ListenableBuilder(
+      listenable: widget.settings,
+      builder: (_, _) => MaterialApp(
+        title: 'Flip Bottle',
+        debugShowCheckedModeBanner: false,
+        home: SplashScreen(
+          audio: widget.audio,
+          settings: widget.settings,
+          store: widget.store,
+        ),
+      ),
     );
   }
 }
