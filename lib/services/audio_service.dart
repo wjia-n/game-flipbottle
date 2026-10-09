@@ -171,19 +171,6 @@ class FlipAudio {
     return out;
   }
 
-  List<double> _pluckMelody(List<double> freqs, double secs) {
-    final n = (_rate * secs).round();
-    final out = List<double>.filled(n, 0);
-    for (int k = 0; k < freqs.length; k++) {
-      final start = (n * k / freqs.length).round();
-      final tone = _tone(freqs[k], 0.55, harmonics: 0.4);
-      for (int i = 0; i < tone.length && start + i < n; i++) {
-        out[start + i] += tone[i] * 0.4;
-      }
-    }
-    return out;
-  }
-
   List<double> _padChord(List<double> freqs, double secs) {
     final n = (_rate * secs).round();
     final out = List<double>.filled(n, 0);

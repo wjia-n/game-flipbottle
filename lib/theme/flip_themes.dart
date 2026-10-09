@@ -248,7 +248,7 @@ const tableStyles = <TableStyle>[
       name: 'Carpet', top: Color(0xFF8E6FB8), edge: Color(0xFF5E4480), proOnly: true),
   TableStyle(
       name: 'Carbon', top: Color(0xFF424242), edge: Color(0xFF212121), proOnly: true),
-}
+];
 
 /// Custom theme built by the player (PRO).
 FlipThemeDef buildCustomTheme(Map<String, int> c) {
