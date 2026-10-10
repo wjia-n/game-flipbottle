@@ -43,7 +43,7 @@ class FlipSettings extends ChangeNotifier {
   int tableStyle = 0;
   int difficulty = 0; // rookie default
   int mode = 0; // classic default
-  bool isPro = false;
+  bool isPro = true; // everything unlocked — no Pro version
 
   // ---- Profile (persisted as ONE JSON string) ----
   String playerName = 'Flipper';
