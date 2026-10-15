@@ -212,10 +212,6 @@ class _ProScreenState extends State<ProScreen> {
             if (s.isPro)
               Text('You already own PRO — thank you! 💛',
                   style: FlipUi.body(15, t)),
-            if (!s.isPro && !store.storeReady)
-              _unconfigured(t, store),
-            if (!s.isPro && store.storeReady)
-              _buyButton(t, s, store),
             const SizedBox(height: 10),
             GestureDetector(
               onTap: () {
@@ -259,21 +255,6 @@ class _ProScreenState extends State<ProScreen> {
             'PRO purchases will be available after the store setup is complete. The game is fully playable meanwhile!',
         textAlign: TextAlign.center,
         style: FlipUi.body(13, t, color: t.muted),
-      ),
-    );
-  }
-
-  Widget _buyButton(FlipThemeDef t, FlipSettings s, FlipStore store) {
-    final p = store.proProduct;
-    return ValueListenableBuilder<bool>(
-      valueListenable: store.purchaseInProgress,
-      builder: (_, busy, __) => FlipUi.chunkyButton(
-        t: t,
-        text: busy
-            ? 'WORKING…'
-            : (p == null ? 'BUY PRO' : 'BUY PRO • ${p.price}'),
-        icon: Icons.star,
-        onTap: busy ? () {} : () => store.buyPro(),
       ),
     );
   }

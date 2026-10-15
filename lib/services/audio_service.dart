@@ -12,6 +12,9 @@ import 'package:audioplayers/audioplayers.dart';
 /// - Lifecycle uses pause()/resume() so interruptions resume where they left off.
 /// - Every public method catches player errors; audio can never crash the app.
 class FlipAudio {
+  /// Per-game pitch character (flipbottle): 1.32x. Makes SFX unique.
+  static const double _pitchMul = 1.320;
+
   static const int _rate = 22050;
   final AudioPlayer _sfx = AudioPlayer();
   final AudioPlayer _music = AudioPlayer();
@@ -93,6 +96,8 @@ class FlipAudio {
 
   List<double> _tone(double freq, double secs,
       {double freqEnd = 0, double attack = 0.02, double harmonics = 0.25}) {
+    freq *= _pitchMul;
+    freqEnd *= _pitchMul;
     final n = (_rate * secs).round();
     final out = List<double>.filled(n, 0);
     for (int i = 0; i < n; i++) {
@@ -191,12 +196,12 @@ class FlipAudio {
       _cache.putIfAbsent(key, () => _wav(build()));
 
   Uint8List _menuBytes() => _clip('music_menu', () {
-        // Warm sunny C – G – Am – F pad, 16s loop.
+        // G# 5 – 0 – 3 – 4 warm pad, 16s loop. Unique to flipbottle.
         final seq = [
-          [261.63, 329.63, 392.0], // C
-          [196.0, 246.94, 293.66], // G
-          [220.0, 261.63, 329.63], // Am
-          [174.61, 220.0, 261.63], // F
+          [349.22, 415.30, 523.25],
+          [207.65, 261.62, 311.12],
+          [277.18, 349.22, 415.30],
+          [311.12, 391.99, 466.16]
         ];
         final out = <double>[];
         for (final chord in seq) {
@@ -205,23 +210,34 @@ class FlipAudio {
         return out;
       });
 
+
   Uint8List _gameBytes() => _clip('music_game', () {
-        // Bouncy pentatonic plucks over a soft bass, 12s loop.
-        final bass = _padChord([98.0, 146.83], 12.0);
-        final plucks = [
-          523.25, 587.33, 659.25, 783.99, 659.25, 587.33, 523.25, 440.0
+        // G# waltz 5 – 0 – 3 – 4, 12s loop. Unique to flipbottle.
+        final seq = [
+          [349.22, 415.30, 523.25],
+          [207.65, 261.62, 311.12],
+          [277.18, 349.22, 415.30],
+          [311.12, 391.99, 466.16]
         ];
-        final n = (_rate * 12).round();
-        final out = List<double>.from(bass);
-        for (int k = 0; k < plucks.length; k++) {
-          final start = (n * k / plucks.length).round();
-          final tone = _tone(plucks[k], 0.45, harmonics: 0.4);
-          for (int i = 0; i < tone.length && start + i < n; i++) {
-            out[start + i] += tone[i] * 0.38;
-          }
+        final out = <double>[];
+        for (final chord in seq) {
+          // Waltz: bass on 1, chords on 2 and 3
+          final bass = _tone(chord[0] / 2, 0.8, harmonics: 0.3);
+          final ch1 = _padChord([chord[1], chord[2]], 0.7);
+          final ch2 = _padChord([chord[1], chord[2]], 0.7);
+          out.addAll(bass);
+          final gap1 = List<double>.filled((_rate * 0.2).round(), 0);
+          out.addAll(gap1);
+          out.addAll(ch1);
+          final gap2 = List<double>.filled((_rate * 0.2).round(), 0);
+          out.addAll(gap2);
+          out.addAll(ch2);
+          final gap3 = List<double>.filled((_rate * 0.2).round(), 0);
+          out.addAll(gap3);
         }
         return out;
       });
+
 
   // ------------------------------------------------------------------ SFX
   Future<void> _play(Uint8List bytes) async {
