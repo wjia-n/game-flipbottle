@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../cheat_bus.dart';
+import '../cheat_menu.dart';
 import '../services/audio_service.dart';
 import '../services/iap_service.dart';
 import '../services/settings_service.dart';
@@ -35,6 +37,36 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _appBar(context, t),
+                  // Version footer: tap 5x fast to open the cheat menu.
+                  CheatMenuTrigger(
+                    callbacks: CheatCallbacks(
+                      onSkipLevel: () =>
+                          CheatEngineBus.active?.debugSkipLevel(),
+                      onInstantWin: () =>
+                          CheatEngineBus.active?.debugInstantWin(),
+                      onInfiniteLives: () {
+                        final e = CheatEngineBus.active;
+                        if (e != null) e.cheatInfiniteLives = true;
+                      },
+                      // No hints in this game — onInfiniteHints omitted.
+                      onUnlockAll: () {
+                        audio.click();
+                        settings.setPro(true);
+                      },
+                      onResetGame: () {
+                        audio.click();
+                        settings.resetStats();
+                      },
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 6),
+                      child: Text(
+                        'Flip Bottle v2.0.0',
+                        textAlign: TextAlign.center,
+                        style: FlipUi.body(11, t, color: t.muted),
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(

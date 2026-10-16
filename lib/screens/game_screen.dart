@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:share_plus/share_plus.dart';
+import '../cheat_bus.dart';
+import '../cheat_menu.dart';
 import '../engine/flip_engine.dart';
 import '../services/audio_service.dart';
 import '../services/iap_service.dart';
@@ -73,6 +75,11 @@ class _GameScreenState extends State<GameScreen>
     WidgetsBinding.instance.addObserver(this);
     engine = FlipEngine(difficulty: widget.difficulty, mode: widget.mode);
     engine.addListener(_onEngine);
+    CheatEngineBus.active = engine;
+    // Honor a persisted infinite-lives cheat from the cheat menu.
+    CheatMenu.infiniteLives.then((v) {
+      engine.cheatInfiniteLives = v;
+    });
     _fx = AnimationController(
         vsync: this, duration: const Duration(days: 1))
       ..addListener(_tickFx);
@@ -240,6 +247,7 @@ class _GameScreenState extends State<GameScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     engine.removeListener(_onEngine);
+    if (CheatEngineBus.active == engine) CheatEngineBus.active = null;
     engine.dispose();
     _fx.dispose();
     widget.audio.startMenuMusic();
@@ -567,6 +575,9 @@ class _FlipPainter extends CustomPainter {
     required this.resolveAt,
   });
 
+  /// World x (screen-width units) -> screen px at full parallax.
+  double _sx(double wx, double W) => (wx - engine.worldX) * W;
+
   @override
   void paint(Canvas canvas, Size size) {
     final W = size.width;
@@ -574,9 +585,12 @@ class _FlipPainter extends CustomPainter {
     final platY = H * 0.72;
     final bh = H * 0.17; // bottle height px
 
-    // --- platforms (table material, soft shadow) ---
-    _platform(canvas, W * engine.startX, platY, W * engine.platW, true);
-    _platform(canvas, W * engine.targetX, platY, W * engine.platW, false);
+    // --- parallax world: far hills, near scrub, scrolling ground + props ---
+    _parallax(canvas, size);
+
+    // --- platforms (table material, soft shadow), in world space ---
+    _platform(canvas, _sx(engine.startX, W), platY, W * engine.platW, true);
+    _platform(canvas, _sx(engine.targetX, W), platY, W * engine.platW, false);
 
     // --- bottle transform ---
     Offset pos;
@@ -584,10 +598,10 @@ class _FlipPainter extends CustomPainter {
     double squash = 0;
     if (engine.phase == FlipPhase.flying) {
       final t = engine.flightT;
-      final x0 = W * engine.startX;
-      final x1 = W * engine.targetX;
+      // Runner camera: bottle stays pinned near the anchor while the
+      // world scrolls beneath it.
       pos = Offset(
-        x0 + (x1 - x0) * t,
+        _sx(engine.bottleWorldX, W),
         platY - bh * 0.55 - sin(t * pi) * H * engine.apex,
       );
       rot = engine.spinTotalDeg * t * pi / 180;
@@ -595,7 +609,7 @@ class _FlipPainter extends CustomPainter {
       _motionLines(canvas, pos, rot, bh);
     } else if (engine.phase == FlipPhase.resolving ||
         engine.phase == FlipPhase.settling) {
-      pos = Offset(W * engine.targetX, platY - bh * 0.55);
+      pos = Offset(_sx(engine.targetX, W), platY - bh * 0.55);
       final r = engine.lastResult;
       final since =
           resolveAt == null ? 1.0 : DateTime.now().difference(resolveAt!).inMilliseconds / 650.0;
@@ -611,7 +625,7 @@ class _FlipPainter extends CustomPainter {
       }
     } else {
       // idle / charging / gameOver(rest): bottle waits on the start platform
-      pos = Offset(W * engine.startX, platY - bh * 0.55);
+      pos = Offset(_sx(engine.startX, W), platY - bh * 0.55);
       rot = engine.phase == FlipPhase.charging
           ? 0.04 * sin(fxTime * 40)
           : 0; // tremble while charging
@@ -619,10 +633,10 @@ class _FlipPainter extends CustomPainter {
 
     _bottle(canvas, pos, rot, bh, squash);
 
-    // --- particles (logical 0..1 -> px) ---
+    // --- particles (stored in world coords -> screen px) ---
     for (final p in particles) {
       canvas.drawCircle(
-        Offset(p.pos.dx * W, p.pos.dy * H),
+        Offset(_sx(p.pos.dx, W), p.pos.dy * H),
         p.size * p.life.clamp(0.0, 1.0),
         Paint()..color = p.color.withValues(alpha: p.life.clamp(0.0, 1.0)),
       );
@@ -637,6 +651,177 @@ class _FlipPainter extends CustomPainter {
             engine.phase == FlipPhase.settling) &&
         r != null) {
       _banner(canvas, size, r);
+    }
+  }
+
+  /// Parallax scenery, all driven by engine.worldX:
+  /// far hills + clouds (0.25x), near scrub (0.6x), scrolling ground strip
+  /// with engine-spawned props (1.0x).
+  void _parallax(Canvas canvas, Size size) {
+    final W = size.width;
+    final H = size.height;
+    final wx = engine.worldX;
+
+    double layerX(double worldUnits, double f) => (worldUnits - wx * f) * W;
+
+    // --- far hills (slow) ---
+    const hillF = 0.25;
+    const hillGap = 0.55;
+    final hillPaint = Paint()..color = theme.muted.withValues(alpha: 0.45);
+    final k0 = ((wx * hillF - 0.8) / hillGap).floor();
+    final k1 = ((wx * hillF + 1.8) / hillGap).ceil();
+    for (int k = k0; k <= k1; k++) {
+      final cx = layerX(k * hillGap, hillF);
+      final v = ((k * 37) % 5).abs() / 5; // deterministic shape variation
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx, H * 0.76),
+          width: W * (0.55 + 0.2 * v),
+          height: H * 0.22,
+        ),
+        hillPaint,
+      );
+      // a cloud riding the same far layer
+      final ccx = layerX(k * hillGap + 0.27, hillF);
+      final ccy = H * (0.10 + 0.06 * (((k * 53) % 7).abs() / 7));
+      final cw = W * 0.15;
+      final cloudPaint =
+          Paint()..color = Colors.white.withValues(alpha: 0.75);
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(ccx, ccy), width: cw * 2, height: cw * 0.55),
+        cloudPaint,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(ccx + cw * 0.5, ccy + cw * 0.14),
+            width: cw * 1.2,
+            height: cw * 0.4),
+        cloudPaint,
+      );
+    }
+
+    // --- near scrub row (faster) ---
+    const nearF = 0.6;
+    const nearGap = 0.30;
+    final bushPaint = Paint()
+      ..color = _darken(theme.muted, 0.18).withValues(alpha: 0.85);
+    final n0 = ((wx * nearF - 0.6) / nearGap).floor();
+    final n1 = ((wx * nearF + 1.6) / nearGap).ceil();
+    for (int k = n0; k <= n1; k++) {
+      final cx = layerX(k * nearGap, nearF);
+      final v = ((k * 91) % 10).abs() / 10;
+      final r = W * (0.030 + 0.022 * v);
+      canvas.drawCircle(Offset(cx, H * 0.85 - r * 0.5), r, bushPaint);
+      canvas.drawCircle(
+          Offset(cx + r * 0.9, H * 0.85 - r * 0.35), r * 0.7, bushPaint);
+    }
+
+    // --- ground strip (full speed) ---
+    final groundTop = H * 0.88;
+    canvas.drawRect(
+      Rect.fromLTWH(0, groundTop, W, H - groundTop),
+      Paint()..color = _darken(theme.skyBottom, 0.22),
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(0, groundTop, W, 4),
+      Paint()..color = _darken(theme.skyBottom, 0.38),
+    );
+    const dashGap = 0.22;
+    final dashPaint = Paint()..color = _darken(theme.skyBottom, 0.34);
+    final d0 = ((wx - 0.4) / dashGap).floor();
+    final d1 = ((wx + 1.4) / dashGap).ceil();
+    for (int k = d0; k <= d1; k++) {
+      final cx = layerX(k * dashGap, 1.0);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+              center: Offset(cx, (groundTop + H) / 2),
+              width: W * 0.07,
+              height: 8),
+          const Radius.circular(4),
+        ),
+        dashPaint,
+      );
+    }
+
+    // --- engine props (full speed), planted on the ground line ---
+    for (final p in engine.props) {
+      final cx = layerX(p.wx, 1.0);
+      if (cx < -60 || cx > W + 60) continue;
+      _prop(canvas, Offset(cx, groundTop), p.kind, p.seed, W);
+    }
+  }
+
+  /// One decorative ground prop. Pure scenery — no gameplay effect.
+  void _prop(Canvas canvas, Offset base, int kind, double seed, double W) {
+    final s = W * 0.011 * (0.8 + seed * 0.5);
+    switch (kind) {
+      case 0: // grass tuft
+        final p = Paint()
+          ..color = _darken(theme.muted, 0.10)
+          ..strokeWidth = s * 0.4
+          ..strokeCap = StrokeCap.round;
+        for (int i = -1; i <= 1; i++) {
+          canvas.drawLine(
+              base, base + Offset(i * s * 0.9, -s * (2.0 + seed * 1.4)), p);
+        }
+        break;
+      case 1: // pebble
+        canvas.drawOval(
+          Rect.fromCenter(
+              center: base + Offset(0, -s * 0.6),
+              width: s * 2.4,
+              height: s * 1.4),
+          Paint()..color = const Color(0xFF9E9E9E).withValues(alpha: 0.9),
+        );
+        break;
+      case 2: // flower
+        final stem = Paint()
+          ..color = _darken(theme.muted, 0.15)
+          ..strokeWidth = s * 0.4
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(base, base + Offset(0, -s * 3.0), stem);
+        canvas.drawCircle(
+            base + Offset(0, -s * 3.2), s * 0.95, Paint()..color = theme.accent);
+        canvas.drawCircle(base + Offset(0, -s * 3.2), s * 0.42,
+            Paint()..color = Colors.white);
+        break;
+      case 3: // warning cone
+        final cone = Path()
+          ..moveTo(base.dx - s * 1.2, base.dy)
+          ..lineTo(base.dx, base.dy - s * 2.6)
+          ..lineTo(base.dx + s * 1.2, base.dy)
+          ..close();
+        canvas.drawPath(cone, Paint()..color = const Color(0xFFE8912D));
+        canvas.drawRect(
+          Rect.fromCenter(
+              center: Offset(base.dx, base.dy - s * 1.1),
+              width: s * 1.5,
+              height: s * 0.45),
+          Paint()..color = Colors.white.withValues(alpha: 0.9),
+        );
+        break;
+      default: // wooden sign
+        final wood = Paint()..color = _darken(theme.platformTop, 0.05);
+        canvas.drawRect(
+          Rect.fromCenter(
+              center: Offset(base.dx, base.dy - s * 1.4),
+              width: s * 0.5,
+              height: s * 2.8),
+          wood,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(base.dx, base.dy - s * 3.2),
+                width: s * 3.4,
+                height: s * 1.5),
+            const Radius.circular(3),
+          ),
+          wood,
+        );
+        break;
     }
   }
 

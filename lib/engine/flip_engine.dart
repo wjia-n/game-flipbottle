@@ -75,6 +75,16 @@ class FlipResult {
   });
 }
 
+/// A ground prop in world coordinates. The engine keeps a rolling window
+/// of props around the camera: spawned ahead, recycled behind.
+class WorldProp {
+  final double wx; // world x, in screen-width units
+  final int kind; // 0 tuft, 1 pebble, 2 flower, 3 cone, 4 sign
+  final double seed; // 0..1 visual variation
+
+  const WorldProp({required this.wx, required this.kind, required this.seed});
+}
+
 class FlipEngine extends ChangeNotifier {
   final FlipDifficulty difficulty;
   final GameMode mode;
@@ -106,6 +116,19 @@ class FlipEngine extends ChangeNotifier {
 
   FlipResult? lastResult;
   int _bannerSeq = 0;
+
+  // ------------------------------------------------------------ world scroll
+  // Side-scrolling camera: worldX advances with the bottle's forward
+  // momentum, so the bottle stays pinned near [camAnchor] on screen while
+  // the world moves beneath it. World units == logical screen widths.
+  double worldX = 0;
+  double bottleWorldX = 0.18;
+  static const double camAnchor = 0.42;
+  final List<WorldProp> props = [];
+  double _nextPropAt = 0;
+
+  // ---- cheat flags (wired by the cheat menu) ----
+  bool cheatInfiniteLives = false;
 
   // ------------------------------------------------------------ timers
   Timer? _chargeTimer;
@@ -177,7 +200,34 @@ class FlipEngine extends ChangeNotifier {
     power = 0;
     flightT = 0;
     lastResult = null;
+    // Camera: bottle rests on the start platform, pinned at the anchor.
+    bottleWorldX = startX;
+    worldX = startX - camAnchor;
+    _maintainProps();
     _enter(FlipPhase.idle);
+  }
+
+  /// Keeps the rolling prop window around the camera: recycles props that
+  /// fell behind, spawns fresh ones ahead of the view.
+  void _maintainProps() {
+    if (props.isEmpty) _nextPropAt = worldX - 0.6;
+    props.removeWhere((p) => p.wx < worldX - 0.8);
+    var guard = 0;
+    while (_nextPropAt < worldX + 2.0 && guard++ < 40) {
+      props.add(WorldProp(
+        wx: _nextPropAt,
+        kind: _rng.nextInt(5),
+        seed: _rng.nextDouble(),
+      ));
+      _nextPropAt += 0.16 + _rng.nextDouble() * 0.34;
+    }
+  }
+
+  /// Advances the camera with the bottle's horizontal motion during flight.
+  void _updateCamera() {
+    bottleWorldX = startX + (targetX - startX) * flightT;
+    worldX = bottleWorldX - camAnchor;
+    _maintainProps();
   }
 
   // ------------------------------------------------------------ input
@@ -223,6 +273,9 @@ class FlipEngine extends ChangeNotifier {
       flightT += _tick.inMilliseconds / flightMs;
       if (flightT >= 1) {
         flightT = 1;
+      }
+      _updateCamera(); // world scrolls under the flying bottle
+      if (flightT >= 1) {
         _resolveLanding();
       }
       notifyListeners();
@@ -265,7 +318,9 @@ class FlipEngine extends ChangeNotifier {
     } else {
       streak = 0;
       misses++;
-      livesLeft = max(0, maxLives - misses);
+      // Infinite-lives cheat: misses still count for accuracy stats, but
+      // the run never ends on lives.
+      livesLeft = cheatInfiniteLives ? maxLives : max(0, maxLives - misses);
     }
 
     _bannerSeq++;
@@ -295,7 +350,7 @@ class FlipEngine extends ChangeNotifier {
   void _advance() {
     final runOver = isScoreAttack
         ? false // clock ends score attack
-        : misses >= maxLives;
+        : (!cheatInfiniteLives && misses >= maxLives);
     if (runOver) {
       _finishGame();
     } else {
@@ -303,12 +358,38 @@ class FlipEngine extends ChangeNotifier {
     }
   }
 
-  void _finishGame() {
-    for (final t in [_chargeTimer, _flightTimer, _resolveTimer, _settleTimer, _clockTimer]) {
+  void _cancelPhaseTimers() {
+    for (final t in [_chargeTimer, _flightTimer, _resolveTimer, _settleTimer]) {
       t?.cancel();
     }
     _chargeTimer = _flightTimer = _resolveTimer = _settleTimer = null;
+  }
+
+  void _finishGame() {
+    _cancelPhaseTimers();
+    _clockTimer?.cancel();
     _enter(FlipPhase.gameOver);
+  }
+
+  // ------------------------------------------------------------ cheat debug
+  /// Cheat: skip the current round — bank bonus points, bump the level
+  /// ramp, and move on to the next platform.
+  void debugSkipLevel() {
+    if (phase == FlipPhase.gameOver || _disposed) return;
+    _cancelPhaseTimers();
+    score += 50 * level;
+    streak += 2;
+    level++;
+    _newRound();
+  }
+
+  /// Cheat: trigger the win state right now (game-over overlay + win jingle).
+  void debugInstantWin() {
+    if (phase == FlipPhase.gameOver || _disposed) return;
+    _cancelPhaseTimers();
+    score += 1000;
+    streak = max(streak, 8);
+    _finishGame();
   }
 
   // ------------------------------------------------------------ watchdog
@@ -420,6 +501,9 @@ class FlipEngine extends ChangeNotifier {
       flightT = t;
       if (flightT >= 1) {
         flightT = 1;
+      }
+      _updateCamera();
+      if (flightT >= 1) {
         _resolveLanding();
       }
       notifyListeners();
