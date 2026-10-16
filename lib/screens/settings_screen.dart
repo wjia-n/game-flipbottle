@@ -8,6 +8,7 @@ import '../theme/flip_themes.dart';
 import 'custom_theme_screen.dart';
 import 'pro_screen.dart';
 import 'ui_kit.dart';
+import '../transfer/transfer_ui.dart';
 
 /// Settings: audio, renameable player, theme/bottle/table pickers, custom
 /// theme creator (PRO), stats reset.
@@ -36,6 +37,7 @@ class SettingsScreen extends StatelessWidget {
             child: SafeArea(
               child: Column(
                 children: [
+              TransferSaveTile(gameSlug: 'flipbottle'),
                   _appBar(context, t),
                   // Version footer: tap 5x fast to open the cheat menu.
                   CheatMenuTrigger(
