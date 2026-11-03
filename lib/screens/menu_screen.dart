@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../engine/flip_engine.dart';
@@ -329,7 +330,7 @@ class _MenuScreenState extends State<MenuScreen> {
                         const SizedBox(width: 14),
                         FlipUi.iconButton(theme,
                             icon: Icons.star,
-                            tooltip: 'Go PRO',
+                            tooltip: defaultTargetPlatform == TargetPlatform.iOS ? '⭐ Gold Star' : 'Go PRO',
                             onTap: () {
                               widget.audio.click();
                               _openPro();
