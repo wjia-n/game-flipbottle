@@ -20,6 +20,13 @@ const _modeDescs = [
   'One miss ends it all — but landings pay 1.5x. High risk, high glory.',
   '60 seconds, unlimited flips. Most points wins. (PRO)',
 ];
+
+// iOS variant: same mode descriptions without the PRO tag (Android keeps the original).
+const _modeDescsIos = [
+  '3 misses and the run ends. Pure streak chasing.',
+  'One miss ends it all — but landings pay 1.5x. High risk, high glory.',
+  '60 seconds, unlimited flips. Most points wins.',
+];
 const _diffNames = ['Rookie', 'Skilled', 'Legend'];
 const _diffDescs = [
   'Wide landing window, slow meter. Learn the flick.',
@@ -228,7 +235,7 @@ class _MenuScreenState extends State<MenuScreen> {
                                             color: selected
                                                 ? Colors.white
                                                 : theme.text)),
-                                    Text(_modeDescs[i],
+                                    Text((defaultTargetPlatform == TargetPlatform.iOS ? _modeDescsIos : _modeDescs)[i],
                                         style: TextStyle(
                                             fontSize: 12,
                                             color: selected

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../cheat_bus.dart';
 import '../cheat_menu.dart';
 import '../services/audio_service.dart';
@@ -106,7 +107,7 @@ class SettingsScreen extends StatelessWidget {
                           _themeGrid(context, t),
                           if (!settings.isPro)
                             _proNudge(context, t,
-                                'PRO unlocks 4 more venues + the custom theme studio'),
+                                defaultTargetPlatform == TargetPlatform.iOS ? 'Gold Star unlocks 4 more venues + the custom theme studio' : 'PRO unlocks 4 more venues + the custom theme studio'),
                           const SizedBox(height: 14),
                           _section(t, 'BOTTLE STYLE  (${bottleStyles.length})'),
                           _bottleGrid(context, t),
